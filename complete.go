@@ -48,7 +48,24 @@ func newOpCompleter(w io.Writer, op *Operation, width int) *opCompleter {
 
 func (o *opCompleter) doSelect() {
 	if len(o.candidate) == 1 {
-		o.op.buf.WriteRunes(o.candidate[0])
+		// Delete the current word
+		if o.candidateOff > 0 {
+			// Move cursor back to the start of the word
+			for i := 0; i < o.candidateOff; i++ {
+				o.op.buf.MoveBackward()
+			}
+			// Delete the whole word
+			for i := 0; i < o.candidateOff; i++ {
+				o.op.buf.Delete()
+			}
+		}
+		// Write the selected candidate
+		// Strip any leading zero-width space character from the candidate
+		candidate := o.candidate[0]
+		if len(candidate) > 0 && candidate[0] == '\u200B' {
+			candidate = candidate[1:]
+		}
+		o.op.buf.WriteRunes(candidate)
 		o.ExitCompleteMode(false)
 		return
 	}
@@ -91,20 +108,28 @@ func (o *opCompleter) OnComplete() bool {
 	}
 
 	// only Aggregate candidates in non-complete mode
-	if !o.IsInCompleteMode() {
-		if len(newLines) == 1 {
-			buf.WriteRunes(newLines[0])
-			o.ExitCompleteMode(false)
-			return true
-		}
+	// if !o.IsInCompleteMode() {
+	// 	if len(newLines) == 1 {
+	// 		// First move cursor back to the start of the word
+	// 		for i := 0; i < offset; i++ {
+	// 			buf.MoveBackward()
+	// 		}
+	// 		// Delete the current word
+	// 		for i := 0; i < offset; i++ {
+	// 			buf.Delete()
+	// 		}
+	// 		buf.WriteRunes(newLines[0])
+	// 		o.ExitCompleteMode(false)
+	// 		return true
+	// 	}
 
-		same, size := runes.Aggregate(newLines)
-		if size > 0 {
-			buf.WriteRunes(same)
-			o.ExitCompleteMode(false)
-			return true
-		}
-	}
+	// 	same, size := runes.Aggregate(newLines)
+	// 	if size > 0 {
+	// 		buf.WriteRunes(same)
+	// 		o.ExitCompleteMode(false)
+	// 		return true
+	// 	}
+	// }
 
 	o.EnterCompleteMode(offset, newLines)
 	return true
@@ -123,7 +148,24 @@ func (o *opCompleter) HandleCompleteSelect(r rune) bool {
 	switch r {
 	case CharEnter, CharCtrlJ:
 		next = false
-		o.op.buf.WriteRunes(o.op.candidate[o.op.candidateChoise])
+		// Move cursor back to the start of the word and delete it if needed
+		if o.candidateOff > 0 {
+			// First move cursor back to the start of the word
+			for i := 0; i < o.candidateOff; i++ {
+				o.op.buf.MoveBackward()
+			}
+			// Delete the current word
+			for i := 0; i < o.candidateOff; i++ {
+				o.op.buf.Delete()
+			}
+		}
+		// Write the selected candidate
+		// Strip any leading zero-width space character from the candidate
+		candidate := o.candidate[o.candidateChoise]
+		if len(candidate) > 0 && candidate[0] == '\u200B' {
+			candidate = candidate[1:]
+		}
+		o.op.buf.WriteRunes(candidate)
 		o.ExitCompleteMode(false)
 	case CharLineStart:
 		num := o.candidateChoise % o.candidateColNum
@@ -197,8 +239,10 @@ func (o *opCompleter) CompleteRefresh() {
 			colWidth = w
 		}
 	}
-	colWidth += o.candidateOff + 1
-	same := o.op.buf.RuneSlice(-o.candidateOff)
+	colWidth += 1 // add a space after each completion item
+
+	// Remove reference to the current word from display
+	// same := o.op.buf.RuneSlice(-o.candidateOff)
 
 	// -1 to avoid reach the end of line
 	width := o.width - 1
@@ -219,9 +263,9 @@ func (o *opCompleter) CompleteRefresh() {
 		if inSelect {
 			buf.WriteString("\033[30;47m")
 		}
-		buf.WriteString(string(same))
+		// buf.WriteString(string(same))
 		buf.WriteString(string(c))
-		buf.Write(bytes.Repeat([]byte(" "), colWidth-runes.WidthAll(c)-runes.WidthAll(same)))
+		buf.Write(bytes.Repeat([]byte(" "), colWidth-runes.WidthAll(c)))
 
 		if inSelect {
 			buf.WriteString("\033[0m")
